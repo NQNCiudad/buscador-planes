@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador Unificado - La Anónima</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .header h1 { color: #667eea; font-size: 2.5em; margin-bottom: 10px; }
+        .header .subtitle { color: #666; font-size: 1.1em; margin-bottom: 15px; }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-box .number { font-size: 1.8em; font-weight: bold; color: #667eea; }
+        .stat-box .label { font-size: 0.85em; color: #666; margin-top: 5px; }
+        
+        .upload-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+        
+        .upload-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+        
+        .upload-card {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upload-card:hover { background: #f0f4ff; border-color: #5568d3; transform: translateY(-5px); }
+        .upload-card.loaded { border-color: #28a745; background: #f0fff4; }
+        .upload-icon { font-size: 3em; margin-bottom: 15px; }
+        .upload-title { font-size: 1.2em; color: #667eea; font-weight: 600; margin-bottom: 10px; }
+        .upload-status { font-size: 0.9em; color: #999; }
+        .upload-status.success { color: #28a745; font-weight: 600; }
+        .file-input { display: none; }
+        
+        .search-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            display: none;
+        }
+        
+        .search-section.show { display: block; }
+        
+        .search-box { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 15px 20px;
+            font-size: 1.1em;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .search-btn, .clear-btn, .reload-btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .search-btn { background: #667eea; color: white; }
+        .search-btn:hover { background: #5568d3; transform: translateY(-2px); }
+        .clear-btn { background: #e0e0e0; color: #666; }
+        .clear-btn:hover { background: #d0d0d0; }
+        .reload-btn { background: #ff9800; color: white; }
+        .reload-btn:hover { background: #f57c00; }
+        
+        .results-section { display: none; }
+        .results-section.show { display: block; }
+        
+        .product-card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+        
+        .product-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        
+        .product-header h2 { font-size: 1.8em; margin-bottom: 15px; }
+        
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .product-item { background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; }
+        .product-item .label { font-size: 0.9em; opacity: 0.9; margin-bottom: 5px; }
+        .product-item .value { font-size: 1.2em; font-weight: 600; }
+        
+        .info-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        
+        .info-section h3 {
+            color: #667eea;
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 6px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        
+        .badge-success { background: #28a745; color: white; }
+        .badge-warning { background: #ffc107; color: #333; }
+        .badge-info { background: #667eea; color: white; }
+        
+        .plans-grid, .discounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .card-item {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+        
+        .card-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+        
+        .card-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 10px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .card-detail {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .card-detail:last-child { border-bottom: none; }
+        .card-detail .label { color: #666; font-size: 0.9em; }
+        .card-detail .value { font-weight: 600; color: #333; }
+        
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .no-results .icon { font-size: 4em; margin-bottom: 20px; }
+        .no-results h3 { font-size: 1.5em; color: #666; margin-bottom: 10px; }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-info { background: #d1ecf1; color: #0c5460; border-left: 4px solid #17a2b8; }
+        
+        .bulk-results {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            display: none;
+        }
+        
+        .bulk-results.show { display: block; }
+        
+        .bulk-results table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .bulk-results th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .bulk-results td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .bulk-results tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .bulk-results .codigo-col { font-weight: 600; color: #667eea; }
+        .bulk-results .planes-col { color: #28a745; }
+        .bulk-results .descuentos-col { color: #ff9800; }
+        .bulk-results .no-encontrado { color: #dc3545; font-style: italic; }
+        
+        .bulk-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .bulk-stats {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .bulk-stat {
+            background: #f8f9fa;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .bulk-stat .number { font-size: 1.5em; font-weight: bold; color: #667eea; }
+        .bulk-stat .label { font-size: 0.85em; color: #666; }
+        
+        .footer {
+            background: white;
+            padding: 25px 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-top: 30px;
+            text-align: center;
+        }
+        
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .footer-left {
+            text-align: left;
+        }
+        
+        .footer-right {
+            text-align: right;
+        }
+        
+        .footer h3 {
+            color: #667eea;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+        
+        .footer p {
+            color: #666;
+            font-size: 0.9em;
+            margin: 3px 0;
+        }
+        
+        .footer .ai-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        
+        .footer .company {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        @media (max-width: 768px) {
+            .upload-grid { grid-template-columns: 1fr; }
+            .search-box { flex-direction: column; }
+            .search-input { width: 100%; }
+            .bulk-results table { font-size: 0.85em; }
+            .bulk-results th, .bulk-results td { padding: 8px; }
+            .footer-content { flex-direction: column; text-align: center; }
+            .footer-left, .footer-right { text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Buscador Unificado de Promociones</h1>
+            <div class="subtitle">La Anónima S.A. - Planes de Financiación + Descuentos Activos</div>
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="number" id="totalCodes">0</div>
+                    <div class="label">Códigos Totales</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="totalPlans">0</div>
+                    <div class="label">Planes Financiación</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="totalDiscounts">0</div>
+                    <div class="label">Con Descuentos</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="totalSheets">0</div>
+                    <div class="label">Hojas Procesadas</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <h2 style="color: #667eea; margin-bottom: 20px;">📂 Cargar Archivos</h2>
+            <div class="upload-grid">
+                <div class="upload-card" id="uploadCard1" onclick="document.getElementById('fileInput1').click()">
+                    <div class="upload-icon">📊</div>
+                    <div class="upload-title">Archivo de Financiación</div>
+                    <div class="upload-status" id="status1">Click para cargar .xlsx</div>
+                </div>
+                <div class="upload-card" id="uploadCard2" onclick="document.getElementById('fileInput2').click()">
+                    <div class="upload-icon">🏷️</div>
+                    <div class="upload-title">Archivo de Descuentos/NT</div>
+                    <div class="upload-status" id="status2">Click para cargar .xlsx</div>
+                </div>
+            </div>
+            <input type="file" id="fileInput1" class="file-input" accept=".xlsx,.xls" onchange="handleFile1(event)">
+            <input type="file" id="fileInput2" class="file-input" accept=".xlsx,.xls" onchange="handleFile2(event)">
+            
+            <div class="alert alert-info" style="margin-top: 20px;">
+                💡 <strong>Instrucción:</strong> Cargá primero el archivo de financiación, luego el de descuentos. Podés cargar solo uno si querés.
+                <br>📌 <strong>Filtro automático:</strong> Solo se mostrarán planes vigentes y descuentos activos.
+            </div>
+            
+            <!-- Nueva sección para CSV -->
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h3 style="color: #667eea; margin-bottom: 15px;">📋 Búsqueda Masiva (CSV)</h3>
+                <div class="upload-card" id="uploadCardCSV" onclick="document.getElementById('fileInputCSV').click()">
+                    <div class="upload-icon">📄</div>
+                    <div class="upload-title">Cargar Lista de Códigos (CSV)</div>
+                    <div class="upload-status" id="statusCSV">Click para cargar .csv</div>
+                </div>
+                <input type="file" id="fileInputCSV" class="file-input" accept=".csv" onchange="handleCSV(event)">
+                <div class="alert alert-info" style="margin-top: 15px;">
+                    ℹ️ <strong>Formato CSV:</strong> Una columna con los códigos (puede tener header o no). Ejemplo:<br>
+                    <code style="background: #f0f0f0; padding: 5px; border-radius: 3px; display: inline-block; margin-top: 5px;">
+                        Codigo<br>
+                        3418984<br>
+                        1512195<br>
+                        1164636
+                    </code>
+                </div>
+            </div>
+        </div>
+
+        <div class="search-section" id="searchSection">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    class="search-input" 
+                    placeholder="Ingresá el código del artículo"
+                    onkeypress="if(event.key === 'Enter') buscarCodigo()"
+                >
+                <button class="search-btn" onclick="buscarCodigo()">🔍 Buscar</button>
+                <button class="clear-btn" onclick="limpiarBusqueda()">Limpiar</button>
+                <button class="reload-btn" onclick="location.reload()">🔄 Reiniciar</button>
+                <button class="reload-btn" onclick="clearSavedData()" style="background: #dc3545;">🗑️ Borrar Datos</button>
+            </div>
+            <div class="alert alert-info" style="margin-top: 15px; font-size: 0.9em;">
+                💾 <strong>Los datos se guardan automáticamente</strong> en tu navegador. La próxima vez que abras el sistema, tus archivos estarán cargados.
+            </div>
+        </div>
+
+        <!-- Resultados búsqueda masiva -->
+        <div class="bulk-results" id="bulkResults">
+            <div class="bulk-header">
+                <h2 style="color: #667eea;">📊 Resultados de Búsqueda Masiva</h2>
+                <button class="export-btn" onclick="exportarTabla()" style="padding: 12px 25px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    📥 Exportar a Excel
+                </button>
+            </div>
+            <div class="bulk-stats">
+                <div class="bulk-stat">
+                    <div class="number" id="bulkTotal">0</div>
+                    <div class="label">Códigos Consultados</div>
+                </div>
+                <div class="bulk-stat">
+                    <div class="number" id="bulkFound">0</div>
+                    <div class="label">Encontrados</div>
+                </div>
+                <div class="bulk-stat">
+                    <div class="number" id="bulkNotFound">0</div>
+                    <div class="label">No Encontrados</div>
+                </div>
+            </div>
+            <div style="overflow-x: auto;">
+                <table id="bulkTable">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Descripción</th>
+                            <th>Marca</th>
+                            <th>Planes de Financiación</th>
+                            <th>Descuentos Activos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bulkTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="results-section" id="resultsSection"></div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <h3>🎯 Sistema de Consulta de Promociones</h3>
+                    <p><span class="company">La Anónima S.A.</span> - Gestión y Datos</p>
+                    <p style="font-size: 0.8em; color: #999; margin-top: 5px;">Versión 1.0 - Febrero 2026</p>
+                </div>
+                <div class="footer-right">
+                    <p style="font-weight: 600; color: #333;">Desarrollado por Jonathan Cheves</p>
+                    <p style="font-size: 0.85em;">Analista de Gestión y Datos Jr.</p>
+                    <div class="ai-badge">
+                        <span style="font-size: 1.2em;">⚡</span>
+                        <span>Solución Automatizada</span>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                <p style="font-size: 0.8em; color: #999;">
+                    Sistema interno para optimización de consultas de planes y promociones.
+                    <br>© 2026 Jonathan Cheves - La Anónima S.A.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let financingData = {};
+        let discountData = {};
+        let planDates = {};
+        let file1Loaded = false;
+        let file2Loaded = false;
+
+        // Cargar datos guardados al iniciar
+        window.onload = function() {
+            loadSavedData();
+        };
+
+        function loadSavedData() {
+            try {
+                // Intentar cargar datos del localStorage
+                const savedFinancing = localStorage.getItem('financingData');
+                const savedDiscounts = localStorage.getItem('discountData');
+                const savedPlanDates = localStorage.getItem('planDates');
+                const savedStats = localStorage.getItem('stats');
+
+                if (savedFinancing) {
+                    financingData = JSON.parse(savedFinancing);
+                    file1Loaded = true;
+                    document.getElementById('uploadCard1').classList.add('loaded');
+                    document.getElementById('status1').classList.add('success');
+                    document.getElementById('status1').textContent = '✓ Datos cargados (guardados)';
+                    console.log('Datos de financiación cargados desde localStorage');
+                }
+
+                if (savedDiscounts) {
+                    discountData = JSON.parse(savedDiscounts);
+                    file2Loaded = true;
+                    document.getElementById('uploadCard2').classList.add('loaded');
+                    document.getElementById('status2').classList.add('success');
+                    document.getElementById('status2').textContent = '✓ Datos cargados (guardados)';
+                    console.log('Datos de descuentos cargados desde localStorage');
+                }
+
+                if (savedPlanDates) {
+                    planDates = JSON.parse(savedPlanDates);
+                }
+
+                if (savedStats) {
+                    const stats = JSON.parse(savedStats);
+                    document.getElementById('totalCodes').textContent = stats.totalCodes || 0;
+                    document.getElementById('totalPlans').textContent = stats.totalPlans || 0;
+                    document.getElementById('totalDiscounts').textContent = stats.totalDiscounts || 0;
+                    document.getElementById('totalSheets').textContent = stats.totalSheets || 0;
+                }
+
+                if (file1Loaded || file2Loaded) {
+                    document.getElementById('searchSection').classList.add('show');
+                }
+            } catch (error) {
+                console.error('Error al cargar datos guardados:', error);
+            }
+        }
+
+        function saveToLocalStorage() {
+            try {
+                // Guardar datos en localStorage
+                if (Object.keys(financingData).length > 0) {
+                    localStorage.setItem('financingData', JSON.stringify(financingData));
+                }
+                if (Object.keys(discountData).length > 0) {
+                    localStorage.setItem('discountData', JSON.stringify(discountData));
+                }
+                if (Object.keys(planDates).length > 0) {
+                    localStorage.setItem('planDates', JSON.stringify(planDates));
+                }
+
+                // Guardar estadísticas
+                const stats = {
+                    totalCodes: document.getElementById('totalCodes').textContent,
+                    totalPlans: document.getElementById('totalPlans').textContent,
+                    totalDiscounts: document.getElementById('totalDiscounts').textContent,
+                    totalSheets: document.getElementById('totalSheets').textContent,
+                    lastUpdate: new Date().toISOString()
+                };
+                localStorage.setItem('stats', JSON.stringify(stats));
+
+                console.log('✓ Datos guardados en localStorage');
+            } catch (error) {
+                console.error('Error al guardar datos:', error);
+                alert('Advertencia: No se pudieron guardar los datos localmente. Los datos estarán disponibles solo durante esta sesión.');
+            }
+        }
+
+        function clearSavedData() {
+            if (confirm('¿Estás seguro de que querés borrar todos los datos guardados? Tendrás que cargar los archivos nuevamente.')) {
+                localStorage.removeItem('financingData');
+                localStorage.removeItem('discountData');
+                localStorage.removeItem('planDates');
+                localStorage.removeItem('stats');
+                alert('Datos borrados. Recargá la página para empezar de nuevo.');
+                location.reload();
+            }
+        }
+
+        function handleFile1(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('status1').textContent = 'Procesando...';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    processFinancingFile(workbook);
+                    
+                    file1Loaded = true;
+                    document.getElementById('uploadCard1').classList.add('loaded');
+                    document.getElementById('status1').classList.add('success');
+                    document.getElementById('status1').textContent = '✓ Cargado correctamente';
+                    
+                    checkIfReady();
+                } catch (error) {
+                    document.getElementById('status1').textContent = '✗ Error al cargar';
+                    console.error(error);
+                    alert('Error al procesar archivo de financiación: ' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handleFile2(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('status2').textContent = 'Procesando...';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    processDiscountFile(workbook);
+                    
+                    file2Loaded = true;
+                    document.getElementById('uploadCard2').classList.add('loaded');
+                    document.getElementById('status2').classList.add('success');
+                    document.getElementById('status2').textContent = '✓ Cargado correctamente';
+                    
+                    checkIfReady();
+                } catch (error) {
+                    document.getElementById('status2').textContent = '✗ Error al cargar';
+                    console.error(error);
+                    alert('Error al procesar archivo de descuentos: ' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processFinancingFile(workbook) {
+            console.log('Procesando archivo de financiación...');
+            
+            // Primero leer fechas de planes
+            readPlanDates(workbook);
+            
+            let totalSheets = 0;
+            const plansSet = new Set();
+
+            workbook.SheetNames.forEach(sheetName => {
+                const sheetLower = sheetName.toLowerCase();
+                if (sheetLower.includes('febrero') || 
+                    sheetLower.includes('resumen') ||
+                    sheetLower.includes('base de datos') ||
+                    sheetLower.includes('buscador') ||
+                    sheetLower.includes('estadística')) {
+                    console.log(`Saltando hoja: ${sheetName}`);
+                    return;
+                }
+
+                let planName = sheetName;
+                if (sheetName.includes(' - Isla ')) {
+                    planName = sheetName.split(' - Isla ')[0].trim();
+                }
+
+                // Verificar si el plan está vigente
+                const planInfo = planDates[planName];
+                if (planInfo) {
+                    if (planInfo.estado && planInfo.estado.toLowerCase() === 'finalizado') {
+                        console.log(`Plan ${planName} finalizado, se omite`);
+                        return;
+                    }
+                    
+                    if (planInfo.hasta) {
+                        // Convertir fecha de Excel a Date de forma robusta
+                        let hasta;
+                        
+                        if (typeof planInfo.hasta === 'number') {
+                            // Fecha en formato serial de Excel (días desde 1900-01-01)
+                            // Excel serial: 1 = 1900-01-01
+                            const excelEpoch = new Date(1900, 0, 1);
+                            hasta = new Date(excelEpoch.getTime() + (planInfo.hasta - 2) * 86400000);
+                        } else if (planInfo.hasta instanceof Date) {
+                            hasta = new Date(planInfo.hasta);
+                        } else if (typeof planInfo.hasta === 'string') {
+                            hasta = new Date(planInfo.hasta);
+                        } else {
+                            // Formato objeto con propiedades
+                            hasta = new Date(planInfo.hasta);
+                        }
+                        
+                        const hoy = new Date();
+                        hoy.setHours(0, 0, 0, 0);
+                        hasta.setHours(0, 0, 0, 0);
+                        
+                        console.log(`Plan ${planName}: Hasta=${hasta.toLocaleDateString()}, Hoy=${hoy.toLocaleDateString()}, HastaRaw=${planInfo.hasta}`);
+                        
+                        if (hasta < hoy) {
+                            console.log(`Plan ${planName} vencido, se omite`);
+                            return;
+                        }
+                    }
+                }
+
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (jsonData.length === 0) return;
+
+                let codesFound = 0;
+                
+                for (let i = 1; i < jsonData.length; i++) {
+                    const row = jsonData[i];
+                    if (!row || row.length === 0) continue;
+
+                    const codigo = row[0] ? String(row[0]).trim() : '';
+                    const descripcion = row[1] ? String(row[1]).trim() : '';
+                    const marca = row[2] ? String(row[2]).trim() : '';
+
+                    if (!codigo || isNaN(parseInt(codigo))) continue;
+                    
+                    const codigoClean = String(parseInt(codigo));
+
+                    if (!financingData[codigoClean]) {
+                        financingData[codigoClean] = {
+                            codigo: codigoClean,
+                            descripcion: descripcion,
+                            marca: marca,
+                            planes: []
+                        };
+                    }
+
+                    if (!financingData[codigoClean].planes.includes(planName)) {
+                        financingData[codigoClean].planes.push(planName);
+                    }
+
+                    plansSet.add(planName);
+                    codesFound++;
+                }
+
+                totalSheets++;
+                console.log(`✓ ${sheetName} → ${planName} (${codesFound} códigos)`);
+            });
+
+            document.getElementById('totalPlans').textContent = plansSet.size;
+            document.getElementById('totalSheets').textContent = totalSheets;
+            
+            console.log(`Financiación procesada: ${Object.keys(financingData).length} códigos, ${plansSet.size} planes`);
+            
+            // Guardar datos en localStorage
+            saveToLocalStorage();
+        }
+
+        function readPlanDates(workbook) {
+            console.log('Leyendo fechas de planes...');
+            
+            let summarySheet = null;
+            for (let sheetName of workbook.SheetNames) {
+                if (sheetName.toLowerCase().includes('febrero') || 
+                    sheetName === workbook.SheetNames[0]) {
+                    summarySheet = sheetName;
+                    break;
+                }
+            }
+
+            if (!summarySheet) {
+                console.log('No se encontró hoja de resumen');
+                return;
+            }
+
+            const worksheet = workbook.Sheets[summarySheet];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            let headerRow = -1;
+            for (let i = 0; i < Math.min(10, jsonData.length); i++) {
+                const row = jsonData[i];
+                if (row && row.some(cell => cell && String(cell).toUpperCase() === 'PLAN')) {
+                    headerRow = i;
+                    break;
+                }
+            }
+
+            if (headerRow === -1) {
+                console.log('No se encontraron headers');
+                return;
+            }
+
+            const headers = jsonData[headerRow];
+            const planIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'PLAN');
+            const estadoIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'ESTADO');
+            const desdeIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'DESDE');
+            const hastaIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'HASTA');
+
+            for (let i = headerRow + 1; i < jsonData.length; i++) {
+                const row = jsonData[i];
+                if (!row || row.length === 0) continue;
+
+                const planName = row[planIdx] ? String(row[planIdx]).trim() : '';
+                const estado = row[estadoIdx] ? String(row[estadoIdx]).trim() : '';
+                const desde = row[desdeIdx];
+                const hasta = row[hastaIdx];
+
+                if (!planName) continue;
+
+                let planKey = planName;
+                if (planName.includes(' - Isla ')) {
+                    planKey = planName.split(' - Isla ')[0].trim();
+                }
+
+                planDates[planKey] = { estado, desde, hasta };
+            }
+            
+            console.log(`Fechas de ${Object.keys(planDates).length} planes leídas`);
+        }
+
+        function processDiscountFile(workbook) {
+            console.log('Procesando archivo de descuentos...');
+            
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            const headers = jsonData[1];
+            const articuloIdx = headers.indexOf('Articulo');
+            const descripcionIdx = headers.indexOf('Descripcion');
+            const marcaIdx = headers.indexOf('Marca');
+            const loteIdx = headers.indexOf('Lote');
+            const mecanicaIdx = headers.indexOf('Mecanica');
+            const estadoIdx = headers.indexOf('Estado:');
+            const desdeIdx = headers.indexOf('Desde');
+            const hastaIdx = headers.indexOf('Hasta');
+
+            let totalProcessed = 0;
+            let totalFiltered = 0;
+
+            for (let i = 2; i < jsonData.length; i++) {
+                const row = jsonData[i];
+                if (!row || row.length === 0) continue;
+
+                const codigo = row[articuloIdx] ? String(row[articuloIdx]).trim() : '';
+                const descripcion = row[descripcionIdx] ? String(row[descripcionIdx]).trim() : '';
+                const marca = row[marcaIdx] ? String(row[marcaIdx]).trim() : '';
+                const lote = row[loteIdx] ? String(row[loteIdx]).trim() : '';
+                const mecanica = row[mecanicaIdx] ? String(row[mecanicaIdx]).trim() : '';
+                const estado = row[estadoIdx] ? String(row[estadoIdx]).trim() : '';
+                const desde = row[desdeIdx];
+                const hasta = row[hastaIdx];
+
+                if (!codigo || isNaN(parseInt(codigo))) continue;
+                
+                totalProcessed++;
+
+                // Filtrar solo vigentes o por comenzar
+                if (estado !== 'Vigente' && estado !== 'Por Comenzar') {
+                    totalFiltered++;
+                    continue;
+                }
+                
+                const codigoClean = String(parseInt(codigo));
+
+                if (!discountData[codigoClean]) {
+                    discountData[codigoClean] = [];
+                }
+
+                discountData[codigoClean].push({
+                    lote, mecanica, estado, descripcion, marca, desde, hasta
+                });
+            }
+
+            console.log(`Descuentos: ${totalProcessed} procesados, ${totalFiltered} filtrados`);
+            document.getElementById('totalDiscounts').textContent = Object.keys(discountData).length.toLocaleString();
+            
+            // Guardar datos en localStorage
+            saveToLocalStorage();
+        }
+
+        function checkIfReady() {
+            if (file1Loaded || file2Loaded) {
+                const allCodes = new Set([
+                    ...Object.keys(financingData),
+                    ...Object.keys(discountData)
+                ]);
+                
+                document.getElementById('totalCodes').textContent = allCodes.size.toLocaleString();
+                document.getElementById('searchSection').classList.add('show');
+                document.getElementById('searchInput').focus();
+            }
+        }
+
+        function buscarCodigo() {
+            const codigo = document.getElementById('searchInput').value.trim().replace(/\s+/g, '');
+            
+            if (!codigo) {
+                alert('Por favor, ingresá un código');
+                return;
+            }
+
+            const financing = financingData[codigo];
+            const discounts = discountData[codigo];
+
+            const resultsSection = document.getElementById('resultsSection');
+            resultsSection.classList.add('show');
+
+            if (!financing && !discounts) {
+                resultsSection.innerHTML = `
+                    <div class="no-results">
+                        <div class="icon">❌</div>
+                        <h3>No se encontró el código</h3>
+                        <p>El código <strong>${codigo}</strong> no está en ninguno de los archivos cargados</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+
+            // Información del producto
+            const productInfo = financing || (discounts && discounts[0]);
+            if (productInfo) {
+                html += `
+                    <div class="product-card">
+                        <div class="product-header">
+                            <h2>✅ Producto Encontrado</h2>
+                            <div class="product-grid">
+                                <div class="product-item">
+                                    <div class="label">Código</div>
+                                    <div class="value">${codigo}</div>
+                                </div>
+                                <div class="product-item">
+                                    <div class="label">Descripción</div>
+                                    <div class="value">${productInfo.descripcion || 'N/A'}</div>
+                                </div>
+                                <div class="product-item">
+                                    <div class="label">Marca</div>
+                                    <div class="value">${productInfo.marca || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Planes de financiación
+            if (financing && financing.planes.length > 0) {
+                html += `
+                    <div class="info-section">
+                        <h3>
+                            💳 Planes de Financiación
+                            <span class="badge badge-info">${financing.planes.length} ${financing.planes.length === 1 ? 'Plan' : 'Planes'}</span>
+                        </h3>
+                        <div class="plans-grid">
+                `;
+
+                financing.planes.forEach((plan, idx) => {
+                    const planInfo = planDates[plan] || {};
+                    const estado = planInfo.estado || '';
+                    
+                    let estadoBadge = '';
+                    if (estado.toLowerCase() === 'vigente') {
+                        estadoBadge = '<span class="badge badge-success">✓ Vigente</span>';
+                    }
+
+                    let desdeStr = '';
+                    let hastaStr = '';
+                    
+                    if (planInfo.desde) {
+                        let desde;
+                        if (typeof planInfo.desde === 'number') {
+                            const excelEpoch = new Date(1900, 0, 1);
+                            desde = new Date(excelEpoch.getTime() + (planInfo.desde - 2) * 86400000);
+                        } else {
+                            desde = new Date(planInfo.desde);
+                        }
+                        desdeStr = desde.toLocaleDateString('es-AR');
+                    }
+                    
+                    if (planInfo.hasta) {
+                        let hasta;
+                        if (typeof planInfo.hasta === 'number') {
+                            const excelEpoch = new Date(1900, 0, 1);
+                            hasta = new Date(excelEpoch.getTime() + (planInfo.hasta - 2) * 86400000);
+                        } else {
+                            hasta = new Date(planInfo.hasta);
+                        }
+                        hastaStr = hasta.toLocaleDateString('es-AR');
+                    }
+
+                    html += `
+                        <div class="card-item">
+                            <div class="card-title">Plan ${plan}</div>
+                            <div class="card-detail">
+                                <span class="label">Opción</span>
+                                <span class="value">#${idx + 1}</span>
+                            </div>
+                            ${estadoBadge ? `
+                            <div class="card-detail">
+                                <span class="label">Estado</span>
+                                <span class="value">${estadoBadge}</span>
+                            </div>
+                            ` : ''}
+                            ${desdeStr ? `
+                            <div class="card-detail">
+                                <span class="label">Desde</span>
+                                <span class="value">${desdeStr}</span>
+                            </div>
+                            ` : ''}
+                            ${hastaStr ? `
+                            <div class="card-detail">
+                                <span class="label">Hasta</span>
+                                <span class="value">${hastaStr}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+
+                html += `</div></div>`;
+            }
+
+            // Descuentos
+            if (discounts && discounts.length > 0) {
+                html += `
+                    <div class="info-section">
+                        <h3>
+                            🏷️ Descuentos y Lotes Activos
+                            <span class="badge badge-success">${discounts.length} ${discounts.length === 1 ? 'Descuento' : 'Descuentos'}</span>
+                        </h3>
+                        <div class="discounts-grid">
+                `;
+
+                discounts.forEach((discount) => {
+                    const estadoBadge = discount.estado === 'Vigente' 
+                        ? '<span class="badge badge-success">✓ Vigente</span>'
+                        : '<span class="badge badge-warning">⏳ Por Comenzar</span>';
+
+                    let desdeStr = '';
+                    let hastaStr = '';
+                    
+                    if (discount.desde) {
+                        let desde;
+                        if (typeof discount.desde === 'number') {
+                            const excelEpoch = new Date(1900, 0, 1);
+                            desde = new Date(excelEpoch.getTime() + (discount.desde - 2) * 86400000);
+                        } else {
+                            desde = new Date(discount.desde);
+                        }
+                        desdeStr = desde.toLocaleDateString('es-AR');
+                    }
+                    
+                    if (discount.hasta) {
+                        let hasta;
+                        if (typeof discount.hasta === 'number') {
+                            const excelEpoch = new Date(1900, 0, 1);
+                            hasta = new Date(excelEpoch.getTime() + (discount.hasta - 2) * 86400000);
+                        } else {
+                            hasta = new Date(discount.hasta);
+                        }
+                        hastaStr = hasta.toLocaleDateString('es-AR');
+                    }
+
+                    html += `
+                        <div class="card-item">
+                            <div class="card-title">${discount.mecanica}</div>
+                            <div class="card-detail">
+                                <span class="label">Lote</span>
+                                <span class="value">${discount.lote}</span>
+                            </div>
+                            <div class="card-detail">
+                                <span class="label">Estado</span>
+                                <span class="value">${estadoBadge}</span>
+                            </div>
+                            ${desdeStr ? `
+                            <div class="card-detail">
+                                <span class="label">Desde</span>
+                                <span class="value">${desdeStr}</span>
+                            </div>
+                            ` : ''}
+                            ${hastaStr ? `
+                            <div class="card-detail">
+                                <span class="label">Hasta</span>
+                                <span class="value">${hastaStr}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+                        <div class="alert alert-info" style="margin-top: 20px;">
+                            ℹ️ <strong>Nota:</strong> Solo se muestran descuentos vigentes o próximos a comenzar.
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Mensajes informativos
+            if (financing && !discounts) {
+                html += `
+                    <div class="alert alert-info">
+                        ℹ️ Este código solo tiene planes de financiación. No tiene descuentos/lotes activos cargados.
+                    </div>
+                `;
+            } else if (!financing && discounts) {
+                html += `
+                    <div class="alert alert-info">
+                        ℹ️ Este código solo tiene descuentos/lotes activos. No tiene planes de financiación cargados.
+                    </div>
+                `;
+            }
+
+            resultsSection.innerHTML = html;
+        }
+
+        function limpiarBusqueda() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('resultsSection').classList.remove('show');
+            document.getElementById('searchInput').focus();
+        }
+
+        function handleCSV(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file1Loaded && !file2Loaded) {
+                alert('Por favor, cargá primero al menos un archivo de datos (Financiación o Descuentos)');
+                return;
+            }
+
+            document.getElementById('statusCSV').textContent = 'Procesando...';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const text = e.target.result;
+                    const codes = parseCSV(text);
+                    
+                    if (codes.length === 0) {
+                        alert('No se encontraron códigos válidos en el CSV');
+                        document.getElementById('statusCSV').textContent = 'Click para cargar .csv';
+                        return;
+                    }
+                    
+                    processBulkSearch(codes);
+                    
+                    document.getElementById('uploadCardCSV').classList.add('loaded');
+                    document.getElementById('statusCSV').classList.add('success');
+                    document.getElementById('statusCSV').textContent = `✓ ${codes.length} códigos cargados`;
+                    
+                } catch (error) {
+                    console.error(error);
+                    alert('Error al procesar CSV: ' + error.message);
+                    document.getElementById('statusCSV').textContent = '✗ Error al cargar';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+            const codes = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Intentar extraer el código (puede estar con o sin comillas, con o sin separadores)
+                const parts = line.split(/[,;\t]/).map(p => p.trim().replace(/['"]/g, ''));
+                
+                for (let part of parts) {
+                    // Solo tomar valores numéricos
+                    if (part && !isNaN(parseInt(part))) {
+                        const code = String(parseInt(part));
+                        if (code.length > 0 && !codes.includes(code)) {
+                            codes.push(code);
+                        }
+                        break; // Solo tomar el primer valor numérico de cada línea
+                    }
+                }
+            }
+            
+            return codes;
+        }
+
+        function processBulkSearch(codes) {
+            console.log(`Procesando búsqueda masiva de ${codes.length} códigos...`);
+            
+            const results = [];
+            let found = 0;
+            let notFound = 0;
+            
+            for (let codigo of codes) {
+                const financing = financingData[codigo];
+                const discounts = discountData[codigo];
+                
+                if (financing || discounts) {
+                    found++;
+                    
+                    const productInfo = financing || (discounts && discounts[0]);
+                    
+                    results.push({
+                        codigo: codigo,
+                        descripcion: productInfo?.descripcion || 'N/A',
+                        marca: productInfo?.marca || 'N/A',
+                        planes: financing?.planes || [],
+                        descuentos: discounts || [],
+                        encontrado: true
+                    });
+                } else {
+                    notFound++;
+                    results.push({
+                        codigo: codigo,
+                        descripcion: 'No encontrado',
+                        marca: '-',
+                        planes: [],
+                        descuentos: [],
+                        encontrado: false
+                    });
+                }
+            }
+            
+            displayBulkResults(results, codes.length, found, notFound);
+        }
+
+        function displayBulkResults(results, total, found, notFound) {
+            // Ocultar búsqueda individual
+            document.getElementById('resultsSection').classList.remove('show');
+            
+            // Mostrar tabla
+            const bulkSection = document.getElementById('bulkResults');
+            bulkSection.classList.add('show');
+            
+            // Actualizar estadísticas
+            document.getElementById('bulkTotal').textContent = total;
+            document.getElementById('bulkFound').textContent = found;
+            document.getElementById('bulkNotFound').textContent = notFound;
+            
+            // Construir tabla
+            const tbody = document.getElementById('bulkTableBody');
+            tbody.innerHTML = '';
+            
+            results.forEach(result => {
+                const row = document.createElement('tr');
+                
+                if (!result.encontrado) {
+                    row.innerHTML = `
+                        <td class="codigo-col">${result.codigo}</td>
+                        <td colspan="4" class="no-encontrado">No encontrado en ningún archivo</td>
+                    `;
+                } else {
+                    // Planes
+                    let planesHTML = '';
+                    if (result.planes.length > 0) {
+                        result.planes.forEach((plan, idx) => {
+                            const planInfo = planDates[plan] || {};
+                            const estado = planInfo.estado || '';
+                            const estadoBadge = estado.toLowerCase() === 'vigente' ? '✓' : '';
+                            planesHTML += `<div>• ${plan} ${estadoBadge}</div>`;
+                        });
+                    } else {
+                        planesHTML = '<span style="color: #999;">-</span>';
+                    }
+                    
+                    // Descuentos
+                    let descuentosHTML = '';
+                    if (result.descuentos.length > 0) {
+                        result.descuentos.forEach(desc => {
+                            const estadoBadge = desc.estado === 'Vigente' ? '✓' : '⏳';
+                            descuentosHTML += `<div>• ${desc.mecanica} ${estadoBadge} (Lote ${desc.lote})</div>`;
+                        });
+                    } else {
+                        descuentosHTML = '<span style="color: #999;">-</span>';
+                    }
+                    
+                    row.innerHTML = `
+                        <td class="codigo-col">${result.codigo}</td>
+                        <td>${result.descripcion}</td>
+                        <td>${result.marca}</td>
+                        <td class="planes-col">${planesHTML}</td>
+                        <td class="descuentos-col">${descuentosHTML}</td>
+                    `;
+                }
+                
+                tbody.appendChild(row);
+            });
+            
+            // Scroll a resultados
+            bulkSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function exportarTabla() {
+            const table = document.getElementById('bulkTable');
+            let csv = '';
+            
+            // Headers
+            const headers = Array.from(table.querySelectorAll('th')).map(th => `"${th.textContent}"`);
+            csv += headers.join(',') + '\n';
+            
+            // Rows
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td')).map(td => {
+                    // Limpiar HTML y dejar solo texto
+                    const text = td.textContent.replace(/\n/g, ' ').replace(/"/g, '""').trim();
+                    return `"${text}"`;
+                });
+                csv += cells.join(',') + '\n';
+            });
+            
+            // Descargar
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `busqueda_masiva_${new Date().toISOString().slice(0,10)}.csv`;
+            link.click();
+        }
+    </script>
+</body>
+</html>

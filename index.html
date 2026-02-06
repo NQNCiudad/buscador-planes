@@ -710,10 +710,41 @@
                 let planName = sheetName;
                 if (sheetName.includes(' - Isla ')) {
                     planName = sheetName.split(' - Isla ')[0].trim();
+                } else if (sheetName.includes('- Isla ')) {
+                    planName = sheetName.split('- Isla ')[0].trim();
+                } else if (sheetName.includes(' -Isla ')) {
+                    planName = sheetName.split(' -Isla ')[0].trim();
+                } else if (sheetName.includes('-Isla ')) {
+                    planName = sheetName.split('-Isla ')[0].trim();
                 }
 
+                console.log(`Procesando hoja: "${sheetName}" → Plan: "${planName}"`);
+
                 // Verificar si el plan está vigente
-                const planInfo = planDates[planName];
+                let planInfo = planDates[planName];
+                
+                // Si no encuentra directo, buscar con variaciones de espacios
+                if (!planInfo) {
+                    // Normalizar: quitar todos los espacios múltiples y alrededor de guiones
+                    const normalizedName = planName.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
+                    
+                    console.log(`  Buscando match para "${planName}" (normalizado: "${normalizedName}")`);
+                    
+                    // Buscar en planDates con nombre normalizado
+                    for (let key in planDates) {
+                        const normalizedKey = key.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
+                        if (normalizedKey === normalizedName || key === normalizedName) {
+                            planInfo = planDates[key];
+                            console.log(`  ✓ Match encontrado: "${planName}" → "${key}"`);
+                            break;
+                        }
+                    }
+                    
+                    if (!planInfo) {
+                        console.log(`  ⚠️ No se encontró info de fechas para: "${planName}"`);
+                    }
+                }
+                
                 if (planInfo) {
                     if (planInfo.estado && planInfo.estado.toLowerCase() === 'finalizado') {
                         console.log(`Plan ${planName} finalizado, se omite`);
@@ -836,30 +867,91 @@
 
             const headers = jsonData[headerRow];
             const planIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'PLAN');
-            const estadoIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'ESTADO');
             const desdeIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'DESDE');
             const hastaIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'HASTA');
+            const tarjetasAbiertasIdx = 14; // Columna O
+            const exclusivoLaAnonimaIdx = 16; // Columna Q
+
+            const hoy = new Date();
+            hoy.setHours(0, 0, 0, 0);
+
+            console.log('--- Procesando planes de la hoja resumen ---');
 
             for (let i = headerRow + 1; i < jsonData.length; i++) {
                 const row = jsonData[i];
                 if (!row || row.length === 0) continue;
 
                 const planName = row[planIdx] ? String(row[planIdx]).trim() : '';
-                const estado = row[estadoIdx] ? String(row[estadoIdx]).trim() : '';
                 const desde = row[desdeIdx];
                 const hasta = row[hastaIdx];
+                const tarjetasAbiertas = row[tarjetasAbiertasIdx] ? String(row[tarjetasAbiertasIdx]).trim() : '';
+                const exclusivoLaAnonima = row[exclusivoLaAnonimaIdx] ? String(row[exclusivoLaAnonimaIdx]).trim() : '';
 
                 if (!planName) continue;
 
+                // Normalizar nombre del plan (quitar "- Isla XXXX" con cualquier variación de espacios)
                 let planKey = planName;
                 if (planName.includes(' - Isla ')) {
                     planKey = planName.split(' - Isla ')[0].trim();
+                } else if (planName.includes('- Isla ')) {
+                    planKey = planName.split('- Isla ')[0].trim();
+                } else if (planName.includes(' -Isla ')) {
+                    planKey = planName.split(' -Isla ')[0].trim();
+                } else if (planName.includes('-Isla ')) {
+                    planKey = planName.split('-Isla ')[0].trim();
                 }
 
-                planDates[planKey] = { estado, desde, hasta };
+                // CALCULAR EL ESTADO BASADO EN FECHAS (no depender de fórmula Excel)
+                let estadoCalculado = 'Vigente'; // Por defecto
+                
+                if (desde && hasta) {
+                    let fechaDesde, fechaHasta;
+                    
+                    // Convertir fechas de Excel
+                    if (typeof desde === 'number') {
+                        const excelEpoch = new Date(1900, 0, 1);
+                        fechaDesde = new Date(excelEpoch.getTime() + (desde - 2) * 86400000);
+                    } else {
+                        fechaDesde = new Date(desde);
+                    }
+                    
+                    if (typeof hasta === 'number') {
+                        const excelEpoch = new Date(1900, 0, 1);
+                        fechaHasta = new Date(excelEpoch.getTime() + (hasta - 2) * 86400000);
+                    } else {
+                        fechaHasta = new Date(hasta);
+                    }
+                    
+                    fechaDesde.setHours(0, 0, 0, 0);
+                    fechaHasta.setHours(0, 0, 0, 0);
+                    
+                    // Calcular estado basado en fechas
+                    if (fechaHasta < hoy) {
+                        estadoCalculado = 'Finalizado';
+                    } else if (fechaDesde > hoy) {
+                        estadoCalculado = 'Por Comenzar';
+                    } else {
+                        estadoCalculado = 'Vigente';
+                    }
+                }
+
+                planDates[planKey] = { 
+                    estado: estadoCalculado,
+                    desde: desde, 
+                    hasta: hasta,
+                    tarjetasAbiertas: tarjetasAbiertas,
+                    exclusivoLaAnonima: exclusivoLaAnonima
+                };
+                
+                // También guardar con variaciones de espacios para máxima compatibilidad
+                const normalizedKey = planKey.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
+                planDates[normalizedKey] = planDates[planKey];
+                
+                console.log(`✓ Guardado: "${planKey}" (también como "${normalizedKey}") → ${estadoCalculado}`);
             }
             
-            console.log(`Fechas de ${Object.keys(planDates).length} planes leídas`);
+            console.log(`--- Total: ${Object.keys(planDates).length} entradas de planes ---`);
+            console.log('Planes guardados:', Object.keys(planDates).slice(0, 10));
         }
 
         function processDiscountFile(workbook) {
@@ -1057,6 +1149,18 @@
                             <div class="card-detail">
                                 <span class="label">Hasta</span>
                                 <span class="value">${hastaStr}</span>
+                            </div>
+                            ` : ''}
+                            ${planInfo.tarjetasAbiertas && planInfo.tarjetasAbiertas !== 'NO APLICA' ? `
+                            <div class="card-detail">
+                                <span class="label">💳 Tarjetas Abiertas</span>
+                                <span class="value" style="color: #28a745; font-weight: 600;">${planInfo.tarjetasAbiertas}</span>
+                            </div>
+                            ` : ''}
+                            ${planInfo.exclusivoLaAnonima && planInfo.exclusivoLaAnonima !== 'NO APLICA' ? `
+                            <div class="card-detail">
+                                <span class="label">🏪 Exclusivo La Anónima</span>
+                                <span class="value" style="color: #667eea; font-weight: 600;">${planInfo.exclusivoLaAnonima}</span>
                             </div>
                             ` : ''}
                         </div>

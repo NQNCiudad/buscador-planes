@@ -787,6 +787,20 @@
 
                 if (jsonData.length === 0) return;
 
+                // Buscar qué columna tiene "PLAN" en el header
+                let planColumnIdx = -1;
+                if (jsonData.length > 0) {
+                    const headerRow = jsonData[0];
+                    for (let i = 0; i < headerRow.length; i++) {
+                        const cellValue = String(headerRow[i] || '').toUpperCase();
+                        if (cellValue.includes('PLAN') || cellValue === 'PLAN') {
+                            planColumnIdx = i;
+                            console.log(`  Columna PLAN encontrada en índice ${i} para hoja "${sheetName}"`);
+                            break;
+                        }
+                    }
+                }
+
                 let codesFound = 0;
                 
                 for (let i = 1; i < jsonData.length; i++) {
@@ -801,6 +815,19 @@
                     
                     const codigoClean = String(parseInt(codigo));
 
+                    // Buscar el plan específico de este código en la columna PLAN
+                    let planEspecifico = planName; // Por defecto usar el nombre de la hoja
+                    
+                    if (planColumnIdx >= 0 && row[planColumnIdx]) {
+                        const planCell = String(row[planColumnIdx]).trim();
+                        // Extraer número del plan (ej: "PLAN 3901" -> "3901")
+                        const planMatch = planCell.match(/PLAN\s*(\d+)/i);
+                        if (planMatch) {
+                            planEspecifico = planMatch[1]; // Solo el número
+                            console.log(`    Código ${codigoClean}: Plan específico "${planEspecifico}" (de "${planCell}")`);
+                        }
+                    }
+
                     if (!financingData[codigoClean]) {
                         financingData[codigoClean] = {
                             codigo: codigoClean,
@@ -810,11 +837,12 @@
                         };
                     }
 
-                    if (!financingData[codigoClean].planes.includes(planName)) {
-                        financingData[codigoClean].planes.push(planName);
+                    // Agregar el plan específico si no está ya
+                    if (!financingData[codigoClean].planes.includes(planEspecifico)) {
+                        financingData[codigoClean].planes.push(planEspecifico);
                     }
 
-                    plansSet.add(planName);
+                    plansSet.add(planEspecifico);
                     codesFound++;
                 }
 
@@ -1172,12 +1200,20 @@
 
             // Descuentos
             if (discounts && discounts.length > 0) {
+                // Verificar si hay info de planes disponible
+                const hasPlanInfo = Object.keys(planDates).length > 0;
+                
                 html += `
                     <div class="info-section">
                         <h3>
                             🏷️ Descuentos y Lotes Activos
                             <span class="badge badge-success">${discounts.length} ${discounts.length === 1 ? 'Descuento' : 'Descuentos'}</span>
                         </h3>
+                        ${!hasPlanInfo ? `
+                        <div class="alert alert-info" style="margin-bottom: 15px;">
+                            💡 <strong>Sugerencia:</strong> Cargá también el archivo de Financiación para ver la información completa de cuotas y tarjetas.
+                        </div>
+                        ` : ''}
                         <div class="discounts-grid">
                 `;
 
@@ -1211,6 +1247,53 @@
                         hastaStr = hasta.toLocaleDateString('es-AR');
                     }
 
+                    // Si el lote indica un plan, intentar obtener info de tarjetas
+                    let tarjetasInfo = '';
+                    const lotePlan = discount.lote.match(/PLAN\s*(\d+)/i);
+                    if (lotePlan) {
+                        const planNum = lotePlan[1];
+                        
+                        // Buscar en planDates con diferentes variaciones del nombre
+                        let planInfo = planDates[planNum] || 
+                                      planDates['Plan ' + planNum] ||
+                                      planDates['PLAN ' + planNum];
+                        
+                        // Si no encuentra, buscar normalizando espacios y guiones
+                        if (!planInfo) {
+                            for (let key in planDates) {
+                                const normalizedKey = key.replace(/\s+/g, '').replace(/-/g, '');
+                                const normalizedPlan = planNum.replace(/\s+/g, '').replace(/-/g, '');
+                                
+                                if (normalizedKey.includes(normalizedPlan) || key.includes(planNum)) {
+                                    planInfo = planDates[key];
+                                    console.log(`Match encontrado para descuento: Plan ${planNum} → ${key}`);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (planInfo) {
+                            if (planInfo.tarjetasAbiertas && planInfo.tarjetasAbiertas !== 'NO APLICA') {
+                                tarjetasInfo += `
+                                <div class="card-detail">
+                                    <span class="label">💳 Tarjetas Abiertas</span>
+                                    <span class="value" style="color: #28a745; font-weight: 600;">${planInfo.tarjetasAbiertas}</span>
+                                </div>
+                                `;
+                            }
+                            if (planInfo.exclusivoLaAnonima && planInfo.exclusivoLaAnonima !== 'NO APLICA') {
+                                tarjetasInfo += `
+                                <div class="card-detail">
+                                    <span class="label">🏪 Exclusivo La Anónima</span>
+                                    <span class="value" style="color: #667eea; font-weight: 600;">${planInfo.exclusivoLaAnonima}</span>
+                                </div>
+                                `;
+                            }
+                        } else {
+                            console.log(`No se encontró info de tarjetas para plan ${planNum} - ¿Falta cargar archivo de financiación?`);
+                        }
+                    }
+
                     html += `
                         <div class="card-item">
                             <div class="card-title">${discount.mecanica}</div>
@@ -1234,6 +1317,7 @@
                                 <span class="value">${hastaStr}</span>
                             </div>
                             ` : ''}
+                            ${tarjetasInfo}
                         </div>
                     `;
                 });
@@ -1402,12 +1486,14 @@
                     // Planes
                     let planesHTML = '';
                     if (result.planes.length > 0) {
-                        result.planes.forEach((plan, idx) => {
+                        // Formatear lista de planes de forma clara
+                        const planesLista = result.planes.map((plan, idx) => {
                             const planInfo = planDates[plan] || {};
-                            const estado = planInfo.estado || '';
-                            const estadoBadge = estado.toLowerCase() === 'vigente' ? '✓' : '';
-                            planesHTML += `<div>• ${plan} ${estadoBadge}</div>`;
+                            const estadoBadge = planInfo.estado && planInfo.estado.toLowerCase() === 'vigente' ? ' ✓' : '';
+                            return `${plan}${estadoBadge}`;
                         });
+                        planesHTML = planesLista.join('<br>• ');
+                        planesHTML = '• ' + planesHTML;
                     } else {
                         planesHTML = '<span style="color: #999;">-</span>';
                     }
@@ -1415,10 +1501,12 @@
                     // Descuentos
                     let descuentosHTML = '';
                     if (result.descuentos.length > 0) {
-                        result.descuentos.forEach(desc => {
-                            const estadoBadge = desc.estado === 'Vigente' ? '✓' : '⏳';
-                            descuentosHTML += `<div>• ${desc.mecanica} ${estadoBadge} (Lote ${desc.lote})</div>`;
+                        const descuentosLista = result.descuentos.map(desc => {
+                            const estadoBadge = desc.estado === 'Vigente' ? ' ✓' : ' ⏳';
+                            return `${desc.mecanica}${estadoBadge}`;
                         });
+                        descuentosHTML = descuentosLista.join('<br>• ');
+                        descuentosHTML = '• ' + descuentosHTML;
                     } else {
                         descuentosHTML = '<span style="color: #999;">-</span>';
                     }

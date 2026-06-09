@@ -897,8 +897,36 @@
             const planIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'PLAN');
             const desdeIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'DESDE');
             const hastaIdx = headers.findIndex(h => h && String(h).toUpperCase() === 'HASTA');
-            const tarjetasAbiertasIdx = 14; // Columna O
-            const exclusivoLaAnonimaIdx = 16; // Columna Q
+            const categoriaIdx = headers.findIndex(h => h && String(h).toUpperCase().includes('CATEGOR'));
+            // Búsqueda inteligente de columnas por nombre (resistente a cambios de estructura)
+            let tarjetasAbiertasIdx = -1;
+            let exclusivoLaAnonimaIdx = -1;
+            
+            for (let i = 0; i < headers.length; i++) {
+                const headerText = String(headers[i] || '').toUpperCase();
+                
+                // Buscar columna "TARJETAS ABIERTAS" (descripción de cuotas)
+                if (headerText.includes('TARJETAS ABIERTAS') && tarjetasAbiertasIdx === -1) {
+                    tarjetasAbiertasIdx = i;
+                    console.log(`✓ Columna "TARJETAS ABIERTAS" encontrada en índice ${i}`);
+                }
+                
+                // Buscar columna "EXCLUSIVO" (Tarjeta La Anónima)
+                if (headerText.includes('EXCLUSIVO') && headerText.includes('ANÓNIMA') && exclusivoLaAnonimaIdx === -1) {
+                    exclusivoLaAnonimaIdx = i;
+                    console.log(`✓ Columna "EXCLUSIVO LA ANÓNIMA" encontrada en índice ${i}`);
+                }
+            }
+            
+            // Fallback a posiciones tradicionales si no se encontraron
+            if (tarjetasAbiertasIdx === -1) {
+                tarjetasAbiertasIdx = 14;
+                console.warn('⚠️ No se encontró columna "TARJETAS ABIERTAS", usando índice 14 por defecto');
+            }
+            if (exclusivoLaAnonimaIdx === -1) {
+                exclusivoLaAnonimaIdx = 16;
+                console.warn('⚠️ No se encontró columna "EXCLUSIVO LA ANÓNIMA", usando índice 16 por defecto');
+            }
 
             const hoy = new Date();
             hoy.setHours(0, 0, 0, 0);
@@ -914,6 +942,7 @@
                 const hasta = row[hastaIdx];
                 const tarjetasAbiertas = row[tarjetasAbiertasIdx] ? String(row[tarjetasAbiertasIdx]).trim() : '';
                 const exclusivoLaAnonima = row[exclusivoLaAnonimaIdx] ? String(row[exclusivoLaAnonimaIdx]).trim() : '';
+                const categoria = (categoriaIdx >= 0 && row[categoriaIdx]) ? String(row[categoriaIdx]).trim() : '';
 
                 if (!planName) continue;
 
@@ -968,14 +997,29 @@
                     desde: desde, 
                     hasta: hasta,
                     tarjetasAbiertas: tarjetasAbiertas,
-                    exclusivoLaAnonima: exclusivoLaAnonima
+                    exclusivoLaAnonima: exclusivoLaAnonima,
+                    categoria: categoria
                 };
                 
                 // También guardar con variaciones de espacios para máxima compatibilidad
                 const normalizedKey = planKey.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
                 planDates[normalizedKey] = planDates[planKey];
                 
-                console.log(`✓ Guardado: "${planKey}" (también como "${normalizedKey}") → ${estadoCalculado}`);
+                // CRÍTICO: Si el nombre del plan contiene múltiples números (ej: "3901, 3902, 3904, 3905, 3910, 3917 y 3918"
+                // o "4454, 4460, 4462, 4464, 4466, 4468 Y 4470"), guardamos cada número individual
+                // para que se pueda buscar por número de plan específico
+                const numerosPlan = planKey.match(/\d{3,5}/g);
+                if (numerosPlan && numerosPlan.length > 0) {
+                    numerosPlan.forEach(num => {
+                        // Solo sobrescribir si no existe ya, o si este plan está vigente (preferir vigentes)
+                        if (!planDates[num] || estadoCalculado === 'Vigente') {
+                            planDates[num] = planDates[planKey];
+                        }
+                    });
+                    console.log(`  → Indexado también como números individuales: ${numerosPlan.join(', ')}`);
+                }
+                
+                console.log(`✓ Guardado: "${planKey}" → ${estadoCalculado}`);
             }
             
             console.log(`--- Total: ${Object.keys(planDates).length} entradas de planes ---`);
@@ -1121,7 +1165,21 @@
                 `;
 
                 financing.planes.forEach((plan, idx) => {
-                    const planInfo = planDates[plan] || {};
+                    // Buscar info del plan con múltiples estrategias
+                    let planInfo = planDates[plan] || {};
+                    
+                    // Si no encuentra info directa y el plan es un número, buscar en claves compuestas
+                    if (!planInfo.estado && /^\d+$/.test(plan)) {
+                        for (let key in planDates) {
+                            // Buscar el número exacto en nombres compuestos como "4454, 4460, 4462 Y 4470"
+                            const regex = new RegExp(`\\b${plan}\\b`);
+                            if (regex.test(key) && planDates[key].estado) {
+                                planInfo = planDates[key];
+                                break;
+                            }
+                        }
+                    }
+                    
                     const estado = planInfo.estado || '';
                     
                     let estadoBadge = '';
@@ -1167,6 +1225,20 @@
                                 <span class="value">${estadoBadge}</span>
                             </div>
                             ` : ''}
+                            ${planInfo.categoria ? (() => {
+                                const cat = planInfo.categoria;
+                                const tieneRestriccion = /\(.*ZONA.*\)|\(.*Solo para.*\)|\(.*COMPETITIVA.*\)|\(.*Libertad.*\)/i.test(cat);
+                                const bgColor = tieneRestriccion ? '#fff3cd' : '#f8f9fa';
+                                const borderColor = tieneRestriccion ? '#ffc107' : '#e0e0e0';
+                                const icon = tieneRestriccion ? '⚠️' : '📋';
+                                return `
+                                <div style="background: ${bgColor}; border-left: 3px solid ${borderColor}; padding: 8px 10px; margin: 8px 0; border-radius: 5px; font-size: 0.85em;">
+                                    <div style="font-weight: 600; color: #666; margin-bottom: 3px;">${icon} Categoría</div>
+                                    <div style="color: #333;">${cat}</div>
+                                    ${tieneRestriccion ? '<div style="margin-top: 5px; font-size: 0.8em; color: #856404; font-weight: 600;">⚠️ Aplica con restricciones de zona</div>' : ''}
+                                </div>
+                                `;
+                            })() : ''}
                             ${desdeStr ? `
                             <div class="card-detail">
                                 <span class="label">Desde</span>

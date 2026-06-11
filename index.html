@@ -785,6 +785,7 @@
                             <th>Marca</th>
                             <th>Planes de Financiación</th>
                             <th>Descuentos Activos</th>
+                            <th>EANs</th>
                         </tr>
                     </thead>
                     <tbody id="bulkTableBody">
@@ -825,6 +826,7 @@
         let financingData = {};
         let discountData = {};
         let planDates = {};
+        let eansData = {};
         let file1Loaded = false;
         let file2Loaded = false;
 
@@ -839,7 +841,12 @@
                 const savedFinancing = localStorage.getItem('financingData');
                 const savedDiscounts = localStorage.getItem('discountData');
                 const savedPlanDates = localStorage.getItem('planDates');
+                const savedEans = localStorage.getItem('eansData');
                 const savedStats = localStorage.getItem('stats');
+
+                if (savedEans) {
+                    eansData = JSON.parse(savedEans);
+                }
 
                 if (savedFinancing) {
                     financingData = JSON.parse(savedFinancing);
@@ -891,6 +898,9 @@
                 if (Object.keys(planDates).length > 0) {
                     localStorage.setItem('planDates', JSON.stringify(planDates));
                 }
+                if (Object.keys(eansData).length > 0) {
+                    localStorage.setItem('eansData', JSON.stringify(eansData));
+                }
 
                 // Guardar estadísticas
                 const stats = {
@@ -914,6 +924,7 @@
                 localStorage.removeItem('financingData');
                 localStorage.removeItem('discountData');
                 localStorage.removeItem('planDates');
+                localStorage.removeItem('eansData');
                 localStorage.removeItem('stats');
                 alert('Datos borrados. Recargá la página para empezar de nuevo.');
                 location.reload();
@@ -1318,60 +1329,266 @@
         }
 
         function processDiscountFile(workbook) {
-            console.log('Procesando archivo de descuentos...');
+            console.log('=== Procesando archivo de descuentos (modo inteligente) ===');
             
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-            const headers = jsonData[1];
-            const articuloIdx = headers.indexOf('Articulo');
-            const descripcionIdx = headers.indexOf('Descripcion');
-            const marcaIdx = headers.indexOf('Marca');
-            const loteIdx = headers.indexOf('Lote');
-            const mecanicaIdx = headers.indexOf('Mecanica');
-            const estadoIdx = headers.indexOf('Estado:');
-            const desdeIdx = headers.indexOf('Desde');
-            const hastaIdx = headers.indexOf('Hasta');
-
+            // Buscar la mejor hoja (la que tenga más datos con columna "Articulo")
+            let bestSheet = null;
+            let headerRow = -1;
+            let jsonData = null;
+            
+            for (const sheetName of workbook.SheetNames) {
+                const ws = workbook.Sheets[sheetName];
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                
+                // Buscar fila de headers (con "Articulo", "Descripcion", "Mecanica", etc.)
+                for (let i = 0; i < Math.min(20, data.length); i++) {
+                    const row = data[i];
+                    if (!row) continue;
+                    
+                    const rowText = row.map(c => String(c || '').toUpperCase()).join(' | ');
+                    if (rowText.includes('ARTICULO') && 
+                        (rowText.includes('MECANICA') || rowText.includes('DESCRIPCION'))) {
+                        bestSheet = sheetName;
+                        headerRow = i;
+                        jsonData = data;
+                        console.log(`✓ Hoja detectada: "${sheetName}", headers en fila ${i + 1}`);
+                        break;
+                    }
+                }
+                
+                if (bestSheet) break;
+            }
+            
+            if (!bestSheet || headerRow === -1) {
+                console.error('❌ No se pudo detectar la estructura del archivo de descuentos');
+                alert('No se pudo detectar la estructura del archivo. Verificá que tenga las columnas Articulo, Descripcion, Mecanica.');
+                return;
+            }
+            
+            const headers = jsonData[headerRow];
+            console.log('Headers detectados:', headers);
+            
+            // === DETECCIÓN INTELIGENTE DE COLUMNAS ===
+            // Función auxiliar: busca columnas por palabras clave
+            const findColumn = (keywords, exclude = []) => {
+                for (let i = 0; i < headers.length; i++) {
+                    const h = String(headers[i] || '').toUpperCase().trim();
+                    if (!h) continue;
+                    
+                    // Verificar exclusiones primero
+                    if (exclude.some(e => h.includes(e.toUpperCase()))) continue;
+                    
+                    // Verificar que tenga al menos una keyword
+                    if (keywords.some(k => h.includes(k.toUpperCase()))) {
+                        return i;
+                    }
+                }
+                return -1;
+            };
+            
+            // Columnas básicas
+            const articuloIdx = findColumn(['ARTICULO', 'COD. ART', 'CODIGO']);
+            const descripcionIdx = findColumn(['DESCRIPCION', 'DESCRIPCIÓN']);
+            const marcaIdx = findColumn(['MARCA']);
+            const desdeIdx = findColumn(['DESDE'], ['HASTA']);
+            const hastaIdx = findColumn(['HASTA']);
+            const estadoIdx = findColumn(['ESTADO']);
+            const eanIdx = findColumn(['EAN']);
+            
+            // === MECÁNICA Y LOTE: pueden estar duplicadas (TODAS vs ZONA COMPETITIVA) ===
+            // Buscar la versión "TODAS" (la normal/principal)
+            let mecanicaIdx = findColumn(['MECANICA TODAS', 'MECÁNICA TODAS']);
+            let loteIdx = findColumn(['LOTE TODAS']);
+            
+            // Si no encuentra "TODAS", buscar genérico (formato antiguo)
+            if (mecanicaIdx === -1) {
+                mecanicaIdx = findColumn(['MECANICA', 'MECÁNICA'], ['ZONA', 'COMPETITIVA']);
+            }
+            if (loteIdx === -1) {
+                loteIdx = findColumn(['LOTE'], ['ZONA', 'COMPETITIVA']);
+            }
+            
+            // Versión Zona Competitiva (opcional)
+            const mecanicaZonaIdx = findColumn(['MECANICA ZONA', 'MECÁNICA ZONA', 'MECANICA COMPETITIVA']);
+            const loteZonaIdx = findColumn(['LOTE ZONA', 'LOTE COMPETITIVA']);
+            
+            console.log('Columnas detectadas:', {
+                articulo: articuloIdx,
+                descripcion: descripcionIdx,
+                marca: marcaIdx,
+                desde: desdeIdx,
+                hasta: hastaIdx,
+                mecanica: mecanicaIdx,
+                lote: loteIdx,
+                mecanicaZona: mecanicaZonaIdx,
+                loteZona: loteZonaIdx,
+                estado: estadoIdx
+            });
+            
+            if (articuloIdx === -1 || mecanicaIdx === -1) {
+                console.error('❌ Columnas críticas no encontradas');
+                alert('No se encontraron las columnas Articulo o Mecanica en el archivo.');
+                return;
+            }
+            
+            const hoy = new Date();
+            hoy.setHours(0, 0, 0, 0);
+            
+            // Mapa de EANs por código (recolectamos todos los EANs únicos)
+            const eansPorCodigo = {};
+            
+            // Función auxiliar para convertir fechas
+            const parseExcelDate = (val) => {
+                if (!val) return null;
+                if (typeof val === 'number') {
+                    const excelEpoch = new Date(1900, 0, 1);
+                    return new Date(excelEpoch.getTime() + (val - 2) * 86400000);
+                }
+                return new Date(val);
+            };
+            
+            // Función para calcular estado por fechas
+            const calcularEstado = (desde, hasta) => {
+                if (!desde || !hasta) return 'Vigente';
+                const fDesde = parseExcelDate(desde);
+                const fHasta = parseExcelDate(hasta);
+                if (!fDesde || !fHasta) return 'Vigente';
+                fDesde.setHours(0, 0, 0, 0);
+                fHasta.setHours(0, 0, 0, 0);
+                if (fHasta < hoy) return 'Finalizado';
+                if (fDesde > hoy) return 'Por Comenzar';
+                return 'Vigente';
+            };
+            
             let totalProcessed = 0;
             let totalFiltered = 0;
-
-            for (let i = 2; i < jsonData.length; i++) {
+            let totalZonaCompetitiva = 0;
+            
+            for (let i = headerRow + 1; i < jsonData.length; i++) {
                 const row = jsonData[i];
                 if (!row || row.length === 0) continue;
-
+                
                 const codigo = row[articuloIdx] ? String(row[articuloIdx]).trim() : '';
-                const descripcion = row[descripcionIdx] ? String(row[descripcionIdx]).trim() : '';
-                const marca = row[marcaIdx] ? String(row[marcaIdx]).trim() : '';
-                const lote = row[loteIdx] ? String(row[loteIdx]).trim() : '';
-                const mecanica = row[mecanicaIdx] ? String(row[mecanicaIdx]).trim() : '';
-                const estado = row[estadoIdx] ? String(row[estadoIdx]).trim() : '';
-                const desde = row[desdeIdx];
-                const hasta = row[hastaIdx];
-
                 if (!codigo || isNaN(parseInt(codigo))) continue;
                 
+                const descripcion = descripcionIdx >= 0 && row[descripcionIdx] ? String(row[descripcionIdx]).trim() : '';
+                const marca = marcaIdx >= 0 && row[marcaIdx] ? String(row[marcaIdx]).trim() : '';
+                const desde = desdeIdx >= 0 ? row[desdeIdx] : null;
+                const hasta = hastaIdx >= 0 ? row[hastaIdx] : null;
+                
+                // Calcular estado por fechas (más confiable que la fórmula Excel)
+                const estado = calcularEstado(desde, hasta);
+                
                 totalProcessed++;
-
-                // Filtrar solo vigentes o por comenzar
-                if (estado !== 'Vigente' && estado !== 'Por Comenzar') {
+                
+                // Filtrar finalizados
+                if (estado === 'Finalizado') {
                     totalFiltered++;
                     continue;
                 }
                 
                 const codigoClean = String(parseInt(codigo));
-
-                if (!discountData[codigoClean]) {
-                    discountData[codigoClean] = [];
+                if (!discountData[codigoClean]) discountData[codigoClean] = [];
+                
+                // Recolectar EAN para este código
+                if (eanIdx >= 0 && row[eanIdx] !== null && row[eanIdx] !== undefined) {
+                    const ean = String(row[eanIdx]).trim();
+                    if (ean && !isNaN(parseInt(ean))) {
+                        if (!eansPorCodigo[codigoClean]) eansPorCodigo[codigoClean] = new Set();
+                        eansPorCodigo[codigoClean].add(ean);
+                    }
                 }
-
-                discountData[codigoClean].push({
-                    lote, mecanica, estado, descripcion, marca, desde, hasta
-                });
+                
+                // Función auxiliar para formatear mecánica (convierte 0.5 → "50%")
+                const formatMecanica = (val) => {
+                    if (val === null || val === undefined || val === '') return '';
+                    
+                    // Si es número, asumimos que es porcentaje decimal
+                    if (typeof val === 'number') {
+                        if (val > 0 && val < 1) {
+                            return `${Math.round(val * 100)}% PLUS`;
+                        }
+                        return String(val);
+                    }
+                    
+                    // Si es string que parsea a número decimal entre 0 y 1
+                    const str = String(val).trim();
+                    const num = parseFloat(str);
+                    if (!isNaN(num) && str === String(num) && num > 0 && num < 1) {
+                        return `${Math.round(num * 100)}% PLUS`;
+                    }
+                    
+                    return str;
+                };
+                
+                // === DESCUENTO NORMAL (TODAS las zonas) ===
+                const mecanica = formatMecanica(row[mecanicaIdx]);
+                const lote = loteIdx >= 0 && row[loteIdx] !== null && row[loteIdx] !== undefined ? String(row[loteIdx]).trim() : '';
+                
+                // === DESCUENTO ZONA COMPETITIVA (si existe la columna) ===
+                let mecanicaZona = '';
+                let loteZona = '';
+                if (mecanicaZonaIdx >= 0 && row[mecanicaZonaIdx] !== null && row[mecanicaZonaIdx] !== undefined) {
+                    mecanicaZona = formatMecanica(row[mecanicaZonaIdx]);
+                    loteZona = loteZonaIdx >= 0 && row[loteZonaIdx] !== null && row[loteZonaIdx] !== undefined 
+                        ? String(row[loteZonaIdx]).trim() 
+                        : '';
+                }
+                
+                // Función auxiliar: verifica si un descuento ya existe para este código
+                const yaExiste = (mec, lt, zona) => {
+                    return discountData[codigoClean].some(d => 
+                        d.mecanica === mec && d.lote === lt && d.zona === zona
+                    );
+                };
+                
+                // Verificar si son iguales (mismo lote Y misma mecánica) → unificar
+                const sonIguales = mecanica && mecanicaZona && 
+                                   mecanica === mecanicaZona && 
+                                   lote === loteZona;
+                
+                if (sonIguales) {
+                    // Caso 1: Mismo descuento en ambas zonas → guardar solo una vez
+                    if (!yaExiste(mecanica, lote, 'todas')) {
+                        discountData[codigoClean].push({
+                            lote, mecanica, estado, descripcion, marca, desde, hasta,
+                            zona: 'todas'
+                        });
+                    }
+                } else {
+                    // Caso 2: Son diferentes → guardar ambos por separado
+                    if (mecanica && !yaExiste(mecanica, lote, 'todas')) {
+                        discountData[codigoClean].push({
+                            lote, mecanica, estado, descripcion, marca, desde, hasta,
+                            zona: 'todas'
+                        });
+                    }
+                    if (mecanicaZona && !yaExiste(mecanicaZona, loteZona, 'competitiva')) {
+                        discountData[codigoClean].push({
+                            lote: loteZona,
+                            mecanica: mecanicaZona,
+                            estado,
+                            descripcion,
+                            marca,
+                            desde,
+                            hasta,
+                            zona: 'competitiva'
+                        });
+                        totalZonaCompetitiva++;
+                    }
+                }
             }
 
-            console.log(`Descuentos: ${totalProcessed} procesados, ${totalFiltered} filtrados`);
+            console.log(`✓ Descuentos: ${totalProcessed} procesados, ${totalFiltered} finalizados filtrados`);
+            console.log(`  → Zona Competitiva: ${totalZonaCompetitiva} descuentos adicionales`);
+            console.log(`  → Total códigos con descuentos: ${Object.keys(discountData).length}`);
+            
+            // Convertir EANs de Set a Array y guardar globalmente
+            for (const cod in eansPorCodigo) {
+                eansData[cod] = Array.from(eansPorCodigo[cod]).sort();
+            }
+            console.log(`  → EANs recolectados para ${Object.keys(eansData).length} códigos`);
+            
             document.getElementById('totalDiscounts').textContent = Object.keys(discountData).length.toLocaleString();
             
             // Guardar datos en localStorage
@@ -1400,7 +1617,19 @@
             }
 
             const financing = financingData[codigo];
-            const discounts = discountData[codigo];
+            let discounts = discountData[codigo];
+            
+            // Deduplicación en tiempo de búsqueda (protección extra)
+            // Elimina descuentos repetidos con misma mecánica + lote + zona
+            if (discounts && discounts.length > 0) {
+                const vistos = new Set();
+                discounts = discounts.filter(d => {
+                    const key = `${d.mecanica}|${d.lote}|${d.zona || 'todas'}`;
+                    if (vistos.has(key)) return false;
+                    vistos.add(key);
+                    return true;
+                });
+            }
 
             const resultsSection = document.getElementById('resultsSection');
             resultsSection.classList.add('show');
@@ -1421,6 +1650,17 @@
             // Información del producto
             const productInfo = financing || (discounts && discounts[0]);
             if (productInfo) {
+                const eans = eansData[codigo] || [];
+                const eanButton = eans.length > 0 
+                    ? `<button onclick="toggleEans()" id="eanToggleBtn" style="margin-top: 16px; padding: 8px 14px; background: rgba(6,182,212,0.1); color: #06b6d4; border: 1px solid rgba(6,182,212,0.3); border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 0.8rem; font-weight: 600;">📦 Ver EANs (${eans.length})</button>
+                       <div id="eansContainer" style="display: none; margin-top: 12px; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px;">
+                           <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; margin-bottom: 8px;">Códigos de Barras (EAN)</div>
+                           <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;">
+                               ${eans.map(e => `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #cbd5e0; padding: 6px 10px; background: #1e293b; border-radius: 4px; border: 1px solid #334155;">${e}</div>`).join('')}
+                           </div>
+                       </div>`
+                    : '';
+                
                 html += `
                     <div class="product-card">
                         <div class="product-header">
@@ -1439,6 +1679,7 @@
                                     <div class="value">${productInfo.marca || 'N/A'}</div>
                                 </div>
                             </div>
+                            ${eanButton}
                         </div>
                     </div>
                 `;
@@ -1657,12 +1898,17 @@
                         }
                     }
 
+                    const esZonaCompetitiva = discount.zona === 'competitiva';
+                    const zonaBadge = esZonaCompetitiva 
+                        ? '<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; background: #f59e0b; color: #0f172a; font-size: 0.65rem; font-weight: 800; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">⚡ Zona Comp.</span>'
+                        : '';
+                    
                     html += `
-                        <div class="card-item">
-                            <div class="card-title">${discount.mecanica}</div>
+                        <div class="card-item" style="${esZonaCompetitiva ? 'border-left: 3px solid #f59e0b;' : ''}">
+                            <div class="card-title">${discount.mecanica}${zonaBadge}</div>
                             <div class="card-detail">
                                 <span class="label">Lote</span>
-                                <span class="value">${discount.lote}</span>
+                                <span class="value">${discount.lote || '-'}</span>
                             </div>
                             <div class="card-detail">
                                 <span class="label">Estado</span>
@@ -1716,6 +1962,18 @@
             document.getElementById('searchInput').value = '';
             document.getElementById('resultsSection').classList.remove('show');
             document.getElementById('searchInput').focus();
+        }
+        
+        function toggleEans() {
+            const container = document.getElementById('eansContainer');
+            const btn = document.getElementById('eanToggleBtn');
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                btn.innerHTML = btn.innerHTML.replace('Ver', 'Ocultar');
+            } else {
+                container.style.display = 'none';
+                btn.innerHTML = btn.innerHTML.replace('Ocultar', 'Ver');
+            }
         }
 
         function handleCSV(event) {
@@ -1789,9 +2047,20 @@
             
             for (let codigo of codes) {
                 const financing = financingData[codigo];
-                const discounts = discountData[codigo];
+                let discounts = discountData[codigo];
                 
-                if (financing || discounts) {
+                // Deduplicación
+                if (discounts && discounts.length > 0) {
+                    const vistos = new Set();
+                    discounts = discounts.filter(d => {
+                        const key = `${d.mecanica}|${d.lote}|${d.zona || 'todas'}`;
+                        if (vistos.has(key)) return false;
+                        vistos.add(key);
+                        return true;
+                    });
+                }
+                
+                if (financing || (discounts && discounts.length > 0)) {
                     found++;
                     
                     const productInfo = financing || (discounts && discounts[0]);
@@ -1802,6 +2071,7 @@
                         marca: productInfo?.marca || 'N/A',
                         planes: financing?.planes || [],
                         descuentos: discounts || [],
+                        eans: eansData[codigo] || [],
                         encontrado: true
                     });
                 } else {
@@ -1812,6 +2082,7 @@
                         marca: '-',
                         planes: [],
                         descuentos: [],
+                        eans: [],
                         encontrado: false
                     });
                 }
@@ -1843,7 +2114,7 @@
                 if (!result.encontrado) {
                     row.innerHTML = `
                         <td class="codigo-col">${result.codigo}</td>
-                        <td colspan="4" class="no-encontrado">No encontrado en ningún archivo</td>
+                        <td colspan="5" class="no-encontrado">No encontrado en ningún archivo</td>
                     `;
                 } else {
                     // Planes
@@ -1866,12 +2137,30 @@
                     if (result.descuentos.length > 0) {
                         const descuentosLista = result.descuentos.map(desc => {
                             const estadoBadge = desc.estado === 'Vigente' ? ' ✓' : ' ⏳';
-                            return `${desc.mecanica}${estadoBadge}`;
+                            const zonaTag = desc.zona === 'competitiva' ? ' ⚡' : '';
+                            return `${desc.mecanica}${estadoBadge}${zonaTag}`;
                         });
                         descuentosHTML = descuentosLista.join('<br>• ');
                         descuentosHTML = '• ' + descuentosHTML;
                     } else {
                         descuentosHTML = '<span style="color: #64748b;">-</span>';
+                    }
+                    
+                    // EANs
+                    let eansHTML = '';
+                    if (result.eans && result.eans.length > 0) {
+                        if (result.eans.length <= 3) {
+                            // Si son pocos, los mostramos todos
+                            eansHTML = result.eans.map(e => `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${e}</div>`).join('');
+                        } else {
+                            // Si son muchos, mostramos los 2 primeros + contador
+                            const visibles = result.eans.slice(0, 2);
+                            const restantes = result.eans.length - 2;
+                            eansHTML = visibles.map(e => `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${e}</div>`).join('');
+                            eansHTML += `<div style="font-size: 0.7rem; color: #06b6d4; margin-top: 4px; font-weight: 600;">+${restantes} más</div>`;
+                        }
+                    } else {
+                        eansHTML = '<span style="color: #64748b;">-</span>';
                     }
                     
                     row.innerHTML = `
@@ -1880,6 +2169,7 @@
                         <td>${result.marca}</td>
                         <td class="planes-col">${planesHTML}</td>
                         <td class="descuentos-col">${descuentosHTML}</td>
+                        <td>${eansHTML}</td>
                     `;
                 }
                 

@@ -4,6 +4,49 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buscador Unificado - La Anónima</title>
+    
+    <!-- Google Analytics 4 (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJ79R7MZ8E"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-XJ79R7MZ8E', {
+        'page_title': 'Buscador Planes de Financiación',
+        'anonymize_ip': true
+      });
+    </script>
+    
+    <!-- Eventos personalizados para tracking -->
+    <script>
+      // Trackear búsqueda individual
+      window.trackSearch = function(codigo, encontrado) {
+        if (typeof gtag !== 'undefined') {
+          gtag('event', 'busqueda_codigo', {
+            'codigo_buscado': codigo,
+            'resultado': encontrado ? 'encontrado' : 'no_encontrado'
+          });
+        }
+      };
+      
+      // Trackear búsqueda masiva CSV
+      window.trackBulkSearch = function(cantidad) {
+        if (typeof gtag !== 'undefined') {
+          gtag('event', 'busqueda_masiva', {
+            'cantidad_codigos': cantidad
+          });
+        }
+      };
+      
+      // Trackear carga de archivos
+      window.trackFileUpload = function(tipo) {
+        if (typeof gtag !== 'undefined') {
+          gtag('event', 'carga_archivo', {
+            'tipo_archivo': tipo
+          });
+        }
+      };
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -817,6 +860,7 @@
                 <p style="font-size: 0.8em; color: #64748b;">
                     Sistema interno para optimización de consultas de planes y promociones.
                     <br>© 2026 Jonathan Cheves · La Anónima S.A. · Neuquén
+                    <br><span style="font-size: 0.9em; opacity: 0.7;">Este sistema utiliza analíticas para mejorar el servicio.</span>
                 </p>
             </div>
         </div>
@@ -944,6 +988,7 @@
                     const workbook = XLSX.read(data, { type: 'array' });
                     
                     processFinancingFile(workbook);
+                    if (typeof trackFileUpload === 'function') trackFileUpload('financiacion');
                     
                     file1Loaded = true;
                     document.getElementById('uploadCard1').classList.add('loaded');
@@ -973,6 +1018,7 @@
                     const workbook = XLSX.read(data, { type: 'array' });
                     
                     processDiscountFile(workbook);
+                    if (typeof trackFileUpload === 'function') trackFileUpload('descuentos_nt');
                     
                     file2Loaded = true;
                     document.getElementById('uploadCard2').classList.add('loaded');
@@ -1633,6 +1679,10 @@
 
             const resultsSection = document.getElementById('resultsSection');
             resultsSection.classList.add('show');
+            
+            // Tracking: registrar la búsqueda
+            const encontrado = !!(financing || (discounts && discounts.length > 0));
+            if (typeof trackSearch === 'function') trackSearch(codigo, encontrado);
 
             if (!financing && !discounts) {
                 resultsSection.innerHTML = `
@@ -2040,6 +2090,9 @@
 
         function processBulkSearch(codes) {
             console.log(`Procesando búsqueda masiva de ${codes.length} códigos...`);
+            
+            // Tracking: registrar búsqueda masiva
+            if (typeof trackBulkSearch === 'function') trackBulkSearch(codes.length);
             
             const results = [];
             let found = 0;

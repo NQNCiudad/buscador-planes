@@ -1163,15 +1163,18 @@
                     
                     const codigoClean = String(parseInt(codigo));
 
-                    // Buscar el plan específico de este código en la columna PLAN
-                    let planEspecifico = planName; // Por defecto usar el nombre de la hoja
-                    
-                    if (planColumnIdx >= 0 && row[planColumnIdx]) {
+                    // Determinar el plan del artículo.
+                    // Solo usamos la columna PLAN cuando la hoja es un plan compuesto
+                    // (ej. "5029 AL 5039"). En hojas individuales (4421, 4495, etc.)
+                    // conservamos el nombre de la hoja para no perder esas opciones.
+                    let planEspecifico = planName;
+                    const esPlanCompuesto = /\d{3,5}\s*(?:AL|A|Y|,|-).*\d{3,5}/i.test(planName);
+
+                    if (esPlanCompuesto && planColumnIdx >= 0 && row[planColumnIdx] !== undefined && row[planColumnIdx] !== null && String(row[planColumnIdx]).trim() !== '') {
                         const planCell = String(row[planColumnIdx]).trim();
-                        // Extraer número del plan (ej: "PLAN 3901" -> "3901")
-                        const planMatch = planCell.match(/PLAN\s*(\d+)/i);
+                        const planMatch = planCell.match(/(?:PLAN\s*)?(\d{3,5})/i);
                         if (planMatch) {
-                            planEspecifico = planMatch[1]; // Solo el número
+                            planEspecifico = planMatch[1];
                             console.log(`    Código ${codigoClean}: Plan específico "${planEspecifico}" (de "${planCell}")`);
                         }
                     }
